@@ -8,7 +8,6 @@ It is straightforward to match CENSOC data to IPUMS census data once both datase
 The variable "HISTID" uniquely identifies  all records for both Censoc and the full count census and can be used to match records between the two datasets. 
 
 A tidyverse join: 
-
 ```{r}
 library(tidyverse)
 
@@ -32,7 +31,7 @@ setkey(census, HISTID)
 merged_df <- censoc[census, nomatch=0]
 ```
 
-A memory-conscious approach using the IPUMSR Package: 
+RAM-saving approach using the IPUMSR Package: 
 ```{r}
 library(ipumsr)
 library(tidyverse)
@@ -47,8 +46,6 @@ cb_function <- function(x, pos) {
 }
 
 cb <- IpumsDataFrameCallback$new(cb_function)
-
-
 
 ```
 
