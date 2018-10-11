@@ -23,8 +23,8 @@ A data.table merge (probably faster):
 ```{r}
 library(data.table)
 
-censoc <- fread('path/to/your/censoc')
-census <- fread('path/to/your/census')
+censoc <- fread('path/to/your/censoc', nrows=7564451)
+census <- fread('/90days/casey/ipums_1940_full_count.csv', nrows = 7564451)
 
 setkey(censoc, HISTID)
 setkey(census, HISTID)
@@ -32,11 +32,22 @@ setkey(census, HISTID)
 merged_df <- censoc[census, nomatch=0]
 ```
 
-A memory-consious approach using the IPUMSR Package: 
+A memory-conscious approach using the IPUMSR Package: 
 ```{r}
 library(ipumsr)
+library(tidyverse)
 
-read_ipums_micro_chunked(data_file = )
+censoc <- read_csv('/90days/casey/censoc_false_histid.csv')
+
+read_ipums_micro_chunked("/path/to/census/data" , ddi = "path/to/ddi", chunk = 10000, callback = cb)
+
+
+cb_function <- function(x, pos) {
+ right_join(censoc, by = "HISTID")
+}
+
+cb <- IpumsDataFrameCallback$new(cb_function)
+
 
 
 ```
