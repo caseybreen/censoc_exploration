@@ -1,0 +1,9 @@
+---
+title: "Merging Censoc and IPUMS datasets"
+output: html_notebook
+---
+
+Merging the censoc with the full-count 1940 IPUMS dataset is straightforward.
+
+
+
