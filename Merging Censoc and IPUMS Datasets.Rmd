@@ -26,8 +26,8 @@ library(data.table)
 censoc <- fread('path/to/your/censoc')
 census <- fread('path/to/your/census')
 
-setkey(censoc, unique_id)
-setkey(census, unique_id)
+setkey(censoc, HISTID)
+setkey(census, HISTID)
 
 merged_df <- censoc[census, nomatch=0]
 ```
