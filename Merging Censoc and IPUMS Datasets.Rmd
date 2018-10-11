@@ -32,3 +32,12 @@ setkey(census, HISTID)
 merged_df <- censoc[census, nomatch=0]
 ```
 
+A memory-consious approach using the IPUMSR Package: 
+```{r}
+library(ipumsr)
+
+read_ipums_micro_chunked(data_file = )
+
+
+```
+
