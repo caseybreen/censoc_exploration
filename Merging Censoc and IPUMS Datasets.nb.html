@@ -176,10 +176,41 @@ $(document).ready(function () {
 
 
 <!-- rnb-text-begin -->
-<p>Merging the censoc with the full-count 1940 IPUMS dataset is straightforward.</p>
+<p>It is straightforward to match CENSOC data to IPUMS census data once both datasets have been <a href="https://censoc.demog.berkeley.edu/articles/ipums_document.html">obtained</a>.</p>
+<p>The variable “HISTID” uniquely identifies all records for both Censoc and the full count census and can be used to match records between the two datasets.</p>
+<p>A tidyverse join:</p>
+<!-- rnb-text-end -->
+<!-- rnb-chunk-begin -->
+<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxubGlicmFyeSh0aWR5dmVyc2UpXG5cbmNlbnNvYyA8LSByZWFkX2NzdigncGF0aC90by95b3VyL2NlbnNvYycpXG5jZW5zdXMgPC0gcmVhZF9jc3YoJ3BhdGgvdG8veW91ci9jZW5zdXMnKVxuXG5tZXJnZWRfZGYgPC0gY2Vuc29jICU+JVxuICBsZWZ0X2pvaW4oY2Vuc3VzLCBieSA9IFwiSElTVElEXCIpXG5gYGAifQ== -->
+<pre class="r"><code>library(tidyverse)
+
+censoc &lt;- read_csv('path/to/your/censoc')
+census &lt;- read_csv('path/to/your/census')
+
+merged_df &lt;- censoc %&gt;%
+  left_join(census, by = &quot;HISTID&quot;)</code></pre>
+<!-- rnb-source-end -->
+<!-- rnb-chunk-end -->
+<!-- rnb-text-begin -->
+<p>A data.table merge (probably faster):</p>
+<!-- rnb-text-end -->
+<!-- rnb-chunk-begin -->
+<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxubGlicmFyeShkYXRhLnRhYmxlKVxuXG5jZW5zb2MgPC0gZnJlYWQoJ3BhdGgvdG8veW91ci9jZW5zb2MnKVxuY2Vuc3VzIDwtIGZyZWFkKCdwYXRoL3RvL3lvdXIvY2Vuc3VzJylcblxuc2V0a2V5KGNlbnNvYywgdW5pcXVlX2lkKVxuc2V0a2V5KGNlbnN1cywgdW5pcXVlX2lkKVxuXG5tZXJnZWRfZGYgPC0gY2Vuc29jW2NlbnN1cywgbm9tYXRjaD0wXVxuYGBgIn0= -->
+<pre class="r"><code>library(data.table)
+
+censoc &lt;- fread('path/to/your/censoc')
+census &lt;- fread('path/to/your/census')
+
+setkey(censoc, unique_id)
+setkey(census, unique_id)
+
+merged_df &lt;- censoc[census, nomatch=0]</code></pre>
+<!-- rnb-source-end -->
+<!-- rnb-chunk-end -->
+<!-- rnb-text-begin -->
 <!-- rnb-text-end -->
 
-<div id="rmd-source-code">LS0tCnRpdGxlOiAiTWVyZ2luZyBDZW5zb2MgYW5kIElQVU1TIGRhdGFzZXRzIgpvdXRwdXQ6IGh0bWxfbm90ZWJvb2sKLS0tCgpNZXJnaW5nIHRoZSBjZW5zb2Mgd2l0aCB0aGUgZnVsbC1jb3VudCAxOTQwIElQVU1TIGRhdGFzZXQgaXMgc3RyYWlnaHRmb3J3YXJkLgoKCgo=</div>
+<div id="rmd-source-code">LS0tCnRpdGxlOiAiTWVyZ2luZyBDZW5zb2MgYW5kIElQVU1TIGRhdGFzZXRzIgpvdXRwdXQ6IGh0bWxfbm90ZWJvb2sKLS0tCgpJdCBpcyBzdHJhaWdodGZvcndhcmQgdG8gbWF0Y2ggQ0VOU09DIGRhdGEgdG8gSVBVTVMgY2Vuc3VzIGRhdGEgb25jZSBib3RoIGRhdGFzZXRzIGhhdmUgYmVlbiBbb2J0YWluZWRdKGh0dHBzOi8vY2Vuc29jLmRlbW9nLmJlcmtlbGV5LmVkdS9hcnRpY2xlcy9pcHVtc19kb2N1bWVudC5odG1sKS4gIAoKVGhlIHZhcmlhYmxlICJISVNUSUQiIHVuaXF1ZWx5IGlkZW50aWZpZXMgIGFsbCByZWNvcmRzIGZvciBib3RoIENlbnNvYyBhbmQgdGhlIGZ1bGwgY291bnQgY2Vuc3VzIGFuZCBjYW4gYmUgdXNlZCB0byBtYXRjaCByZWNvcmRzIGJldHdlZW4gdGhlIHR3byBkYXRhc2V0cy4gCgpBIHRpZHl2ZXJzZSBqb2luOiAKCmBgYHtyfQpsaWJyYXJ5KHRpZHl2ZXJzZSkKCmNlbnNvYyA8LSByZWFkX2NzdigncGF0aC90by95b3VyL2NlbnNvYycpCmNlbnN1cyA8LSByZWFkX2NzdigncGF0aC90by95b3VyL2NlbnN1cycpCgptZXJnZWRfZGYgPC0gY2Vuc29jICU+JQogIGxlZnRfam9pbihjZW5zdXMsIGJ5ID0gIkhJU1RJRCIpCmBgYAoKQSBkYXRhLnRhYmxlIG1lcmdlIChwcm9iYWJseSBmYXN0ZXIpOiAKYGBge3J9CmxpYnJhcnkoZGF0YS50YWJsZSkKCmNlbnNvYyA8LSBmcmVhZCgncGF0aC90by95b3VyL2NlbnNvYycpCmNlbnN1cyA8LSBmcmVhZCgncGF0aC90by95b3VyL2NlbnN1cycpCgpzZXRrZXkoY2Vuc29jLCB1bmlxdWVfaWQpCnNldGtleShjZW5zdXMsIHVuaXF1ZV9pZCkKCm1lcmdlZF9kZiA8LSBjZW5zb2NbY2Vuc3VzLCBub21hdGNoPTBdCmBgYAoK</div>
 
 
 
