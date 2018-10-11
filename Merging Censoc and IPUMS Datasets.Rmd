@@ -3,7 +3,32 @@ title: "Merging Censoc and IPUMS datasets"
 output: html_notebook
 ---
 
-Merging the censoc with the full-count 1940 IPUMS dataset is straightforward.
+It is straightforward to match CENSOC data to IPUMS census data once both datasets have been [obtained](https://censoc.demog.berkeley.edu/articles/ipums_document.html).  
 
+The variable "HISTID" uniquely identifies  all records for both Censoc and the full count census and can be used to match records between the two datasets. 
 
+A tidyverse join: 
+
+```{r}
+library(tidyverse)
+
+censoc <- read_csv('path/to/your/censoc')
+census <- read_csv('path/to/your/census')
+
+merged_df <- censoc %>%
+  left_join(census, by = "HISTID")
+```
+
+A data.table merge (probably faster): 
+```{r}
+library(data.table)
+
+censoc <- fread('path/to/your/censoc')
+census <- fread('path/to/your/census')
+
+setkey(censoc, unique_id)
+setkey(census, unique_id)
+
+merged_df <- censoc[census, nomatch=0]
+```
 
