@@ -1,0 +1,151 @@
+---
+title: "Bayesian truncated Gompertz models for estimating mortality in CenSoc"
+output:
+  html_document: default
+  html_notebook: default
+---
+
+## Introduction
+As the observed deaths in the CenSoc dataset are truncated to be within a certain age range which varies across cohorts, any comparison across cohorts of mortality will be unfair. Therefore, the dataset must adjust for the truncation. Fortunately, a Bayesian truncated Gompertz model can be used for this dataset. 
+
+The purpose of this vignette is threefold: first, to provide a short guide for the use of CenSoc data, second, to present useful tools from the `censoc` R package and lastly, to show an application of the Bayesian truncated Gompertz model. For this case, the example will be an estimation of life expectancy at age 65 (i.e. the average years left to live at age 65) by cohort and education group, for cohorts 1895-1905 using the CenSoc dataset.
+
+Please review the following links for more information on the [CenSoc project](https://censoc.demog.berkeley.edu/), [dataset details](https://censoc.demog.berkeley.edu/articles/match_document.html) and the [Bayesian truncated Gompertz model](https://censoc.demog.berkeley.edu/articles/censoc_chapter.pdf).
+
+
+##Data and variables 
+The CenSoc dataset contains variables related to the birth and death dates, an ID variable and the state indicator,  but does not contain other information such as  education. However, this can be obtained by matching individuals with the full count 1940 census. The first step is to download the CenSoc data from the [website](https://censoc.demog.berkeley.edu/) and then [obtain the full count 1940 census from IPUMS](https://censoc.demog.berkeley.edu/articles/ipums_document.html). Here for instance, the education variable `EDUC` is downloaded from IPUMS. Refer to [here](https://usa.ipums.org/usa-action/variables/EDUC#codes_section) for and explanation of what the codes mean. 
+
+CenSoc variables
+
+* `census_age` refers to the individual’s age at the time of the 1940 Census.
+* `byear`: year of birth
+* `dyear`: year of death
+* `bmonth`: month of birth
+* `dmonth`: month of death
+* `SERIAL40`: Household serial number in 1940 Census
+* `NUMPREC40`: Number of person records in household
+* `PERNUM`: Person number within household
+* `STATEFIP`: State of residence FIPS code
+
+## Variable preparation  and initial analysis
+
+####Packages
+Some useful libraries for the CenSoc dataset analysis include: `tidyverse` and `data.table`. In addition, the `censoc` library contains important functions  to work with and fit models to the CenSoc dataset, in particular the truncated bayesian gompertz model. Information about the functions contained in this package can be found on the [CenSoc website](https://censoc.demog.berkeley.edu/reference/index.html). Also, to run the model the necessary libraries are `rjags` and `R2jags`.
+__Note:__ Before using `library(censoc)` users must install the package from 
+```{r, eval=FALSE}
+install.packages("devtools") 
+devtools::install_github("MJAlexander/censoc")
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(data.table)
+library(rjags)
+library(R2jags)
+library(censoc)
+```
+
+#### Data and variable creation
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+censoc_file_path <- "/data/josh/CenSoc/censoc_bfdw.csv"
+df <- read_csv(file = censoc_file_path, progress = FALSE)
+```
+
+From the loaded CenSoc data we can use `censoc` functions to 1) retreive the education variable, `EDUC`, and recode it to refer to the number or categories of years of education; 2) create a variable containing the age at death. 
+
+* The `add_educ_recode_column` function creates `educ_recode` (stored in the last column of the dataset), which must then be recoded to remove the 999 category of missing values. From this variable, a categorical variable, `educ_cat` is created to group  the years of education. The labels in `educ_label` indicate the code of the groupings.
+
+* The `age_of_death` variable is calculated based on the month and year of birth and death using the function `add_age_of_death_column`.
+```{r, warning=FALSE}
+#Number of years of education
+df <- add_educ_recode_column(df)
+df <- filter(df, educ_recode!=999)
+
+#Categorical of years of education
+df$educ_cat <- NA
+df$educ_cat[df$educ_recode<=8] <- 1
+df$educ_cat[df$educ_recode>=9&df$educ_recode<=12] <- 2
+df$educ_cat[df$educ_recode>12] <- 3
+
+#Age of death
+df <- add_age_of_death_column(df)
+
+```
+
+Using the `tabulate_deaths`function, we can tabulate the number of deaths at each age by cohort (`byear`) and education level (`educ_cat`).  Notice that the old cohorts have very few deaths observed and these are at very old ages. If the sample is restricted to look at the birth cohorts of 1895 to 1905 then we can see that, for example, 4483 people born in 1895 who had 8 years or less education died at the age of 80. 
+
+```{r}
+tab_df <- tabulate_deaths(df, educ_cat)
+
+# define the labels for each of the education groups
+tab_df$educ_label <- NA
+tab_df$educ_label[tab_df$educ_cat==1] <- "8 years or less"
+tab_df$educ_label[tab_df$educ_cat==2] <- "9-12 years"
+tab_df$educ_label[tab_df$educ_cat==3] <- "13+ years"
+
+# define cohorts we are interested in
+cohorts <- 1895:1905
+# filter so that data only contains these cohorts
+tab_df <- filter(tab_df, byear %in% cohorts) 
+head(tab_df)
+```
+__Important Note__ for when you may want to alter this code to study mortality by other groups: the format of the tabulated data must follow that of the `tab_df` above. In particular, the third column must be a number referring to the group level. The fifth column must be a label for each group. 
+
+## Estimating mortality across cohort and education
+
+Before using the tabulated dataset, we need to set some parameters. Let the minimum age be 65, so that we can get life expectancy estimates from age 65 upwards. Using the `get_meta_data` function we can obtain meta data from the tabulated dataset regarding the number of cohorts and number of age groups. 
+
+```{r}
+#Initial age
+min_age <- 65
+
+#Meta_data
+meta_data <- get_meta_data(tab_df, min_age)
+ages <- meta_data$ages
+nages <- meta_data$nages
+cohorts <- meta_data$cohorts
+ncohorts <- meta_data$ncohorts
+group_levels <- meta_data$group_levels
+group_labels <- meta_data$group_labels
+ngroups <- meta_data$ngroups
+
+```
+
+####Running the model
+The `truncated_gompertz_model` function uses the tabulated data as input, with a specified minimum age (in this case, 65 years), the number of chains and the number of iterations. For an initial run, use the parameters below. For the model to converge, the value of "Rhat" must be 1.1 or lower. If your model did not converge, try running it for more iterations. __NOTE: Model run time can be quite long.__
+
+
+```{r}
+mod <- truncated_gompertz_model(tab_df, min_age, number_chains = 4, number_iterations = 4000, run_in_parallel = TRUE)
+```
+
+
+#### Results
+The results for the model are saved in the `mod` object, which is then used in the `get_estimated_deaths` function. For example, we can look at the estimated number of deaths by age for each cohort and education group. The `alpha_level` argument to this function refers to the width of the confidence interval: a value of 0.05 refers to a 95% confidence interval. 
+
+For example, the estimated number of deaths at age 65 for the lowest education category for those born in 1895 was 3268, with a 95% confidence interval of (2862, 3796).
+
+
+```{r}
+death_df <- get_estimated_deaths(mod, cohorts, ncohorts, group_levels, ngroups, ages, nages, alpha_level = 0.05)
+```
+
+Death counts by age, cohort and education group are not that useful in comparing across cohorts and groups, because we know some groups are bigger than others. Let's use the model results to calculate the life expectancy and hazard rate by cohort and education group. For example, the estimated life expectancy at age 65 for the lowest education group for those born in 1895 is 14.03 (95% CI: 13.66, 14.34). A graphical representation is obtained using the `plot_ex` function.
+
+
+```{r, message=FALSE}
+# get life expectancy (ex) and hazard rate (hx) estimates
+res <- get_estimated_hx_ex(mod, ncohorts, ngroups, group_labels, nages, alpha_level = 0.05)
+ex_df <- res$ex_df
+hx_df <- res$hx_df
+
+# specify the type of group being considered
+group_title <- "Education"
+# specify the age of life expectancy to be plotted 
+ex_age <- 65
+
+plot_ex(ex_df, ex_age, group_title)
+```
+
