@@ -36,8 +36,6 @@ A memory-consious approach using the IPUMSR Package:
 ```{r}
 library(ipumsr)
 
-read_ipums_micro_chunked(data_file = )
-
-
+read_ipums_micro_chunked(data_file = "")
 ```
 
