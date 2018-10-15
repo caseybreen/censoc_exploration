@@ -1,0 +1,196 @@
+---
+title: "SS-5 Coverage Notes"
+output: html_notebook
+---
+
+## Introduction
+
+In this notebook, I look at the completeness of the NUMIDEATH files we received from the National Archives.
+
+Our goals are:
+
+1. To see how counts in NUMIDEATH compare to HMD death counts for entire US population.
+
+2. To try to figure out the reason for the differences, perhaps by looking at coverage rates by state.
+
+## Reading NUMIDEATH files and data cleaning
+
+```{r}
+library(data.table)
+dt <- fread("numdeath_all.csv") ## this is a combined file that I created with only a few variables
+```
+We get 49 million rows. 
+
+```{r}
+head(dt)
+```
+And we can see that we have only SSN, first name, last name, dob, dod.
+
+
+We noticed that some of the dates are missing a zero before the month.
+
+```{r}
+## check dod and dob strings for length
+table(nchar(dt$dod))
+```
+```{r}
+table(nchar(dt$dob))
+```
+We could fix these, but it takes time. Just drop for now.
+```{r}
+dt <- dt[nchar(dob) != 7]
+```
+We create separate variables for year, month and day.
+```{r}
+## step 1, get dates
+dt[, dyear := as.numeric(substr(dod, 5, 8))]
+dt[, byear := as.numeric(substr(dob, 5, 8))]
+dt[, bmonth := as.numeric(substr(dob, 1,2))]
+dt[, dmonth := as.numeric(substr(dod, 1,2))]
+dt[, bday := as.numeric(substr(dob, 3,4))]
+dt[, dday := as.numeric(substr(dod, 3,4))]
+```
+For the birth and death records missing "day", we impute.
+```{r}
+## fix dday and bday if "XX" or "0" by imputing 1st of month
+dt[bday == 0 | is.na(bday), .N]
+dt[bday == 0 | is.na(bday), bday := 1]
+dt[dday == 0 | is.na(dday), .N]
+dt[dday == 0 | is.na(dday), dday := 1]
+```
+We calculate age at death with an accuracy of about a month.
+```{r}
+## decent approx of age at death
+dt[, age.at.death := (dyear + dmonth/12) - (byear + bmonth/12)]
+```
+Drop people who die before they're born
+```{r}
+dt[age.at.death < 0, .N] ## only 124 cases
+dt <- dt[age.at.death >= 0,]
+## visualize
+hist(dt$age.at.death)
+## so it looks like we have a few very old people >> 110
+```
+
+## Lexis table of deaths by year and age
+
+```{r}
+dt[, years.at.death := floor(age.at.death)]
+Dxt.tab <- dt[, table(years.at.death, dyear)]
+```
+
+## visualize
+
+```{r}
+filled.contour(x = as.numeric(rownames(t(Dxt.tab))),
+               y = as.numeric(colnames(t(Dxt.tab))),
+               log(t(Dxt.tab)))
+## let's look only at post 1960 and age under 110
+
+my.Dxt.tab <- Dxt.tab[paste(50:110), paste(1980:2007)]
+filled.contour(x = as.numeric(rownames(t(my.Dxt.tab))),
+               y = as.numeric(colnames(t(my.Dxt.tab))),
+               log(t(my.Dxt.tab)))
+
+my.Dxt.tab <- Dxt.tab[paste(65:96), paste(1985:2007)]
+filled.contour(x = as.numeric(rownames(t(my.Dxt.tab))),
+               y = as.numeric(colnames(t(my.Dxt.tab))),
+               log(t(my.Dxt.tab)))
+filled.contour(x = as.numeric(rownames(t(my.Dxt.tab))),
+               y = as.numeric(colnames(t(my.Dxt.tab))),
+               t(my.Dxt.tab))
+```
+## What is start date where we have fuller reporting?
+
+```{r}
+tt <- table(dt[dyear > 1950]$dyear)
+plot(tt)
+```
+
+
+So it looks like 1988 is the year when reporting increases. Perhaps we should be concerned that there's a decline after 2002 or so.
+
+NCHS reports 2.4 million deaths in 2000. Here we see
+
+```{r}
+tt["2000"]
+```
+2.2 million. So we're doing pretty well. Not perfect but pretty well.
+
+## Comparison with HMD
+
+```{r}
+hmd <- fread("/data/josh/CenSoc/hmd/hmd_statistics/deaths/Deaths_1x1/USA.Deaths_1x1.txt")
+hmd[Age == "110+", Age := "110"]
+
+
+## now create an Dxt matrix
+hmd.Dxt <- xtabs(Total ~ Age + Year, hmd)
+```
+
+```{r, fig.asp = 1.5}
+## now let's compare
+Dxt.ss5 <- Dxt.tab[paste(50:110), paste(1985:2007)] 
+Dxt.hmd <-   hmd.Dxt[paste(50:110), paste(1985:2007)]
+ratio.mat <- t(Dxt.ss5/Dxt.hmd)
+my.breaks <- c(0, .8, seq(.9, .99, .01))
+image(x = as.numeric(rownames(ratio.mat)),
+      y = as.numeric(colnames(ratio.mat)),
+      z = ratio.mat, 
+      breaks = my.breaks, 
+      col = heat.colors(length(my.breaks)-1),
+      xlab = "year",
+      ylab = "age")
+contour(x = as.numeric(rownames(ratio.mat)),
+      y = as.numeric(colnames(ratio.mat)),
+      z = ratio.mat, 
+levels = c(seq(0, .9, .1), seq(.91, .99, .01)),
+add = TRUE)
+abline(v = c(1988, 2004), lwd = 4, col = "blue")
+abline(h = 65, lwd = 4, col = "blue")
+
+```
+
+## let's look by  cohort
+
+```{r}
+## restructure the data so it has cohort
+hmd.dt <- as.data.table(Dxt.hmd)
+ss5.dt <- as.data.table(Dxt.ss5)
+names(ss5.dt) <- c("Age", "Year", "N")
+hmd.dt[, x := as.numeric(Age)]
+hmd.dt[, year := as.numeric(Year)]
+ss5.dt[, x := as.numeric(Age)]
+ss5.dt[, year := as.numeric(Year)]
+hmd.dt[, cohort := year - x]
+ss5.dt[, cohort := year - x]
+
+```
+
+```{r}
+par(mfrow = c(2,3))
+cohort.vec <- c(1890, 1900, 1910, 1920, 1930)
+for (i in 1:length(cohort.vec))
+{
+  this.coh <- cohort.vec[i]
+hmd.dt[cohort == this.coh, plot(x, N, ylim = c(100, max(N)),
+##                                log = "y",
+                               type = "l", col = "blue")]
+ss5.dt[cohort == this.coh, lines(x, N, lty = 2, col = "red")]
+title(paste("Cohort of", this.coh))
+}
+
+```
+So we can see pretty clearly that we start to be pretty good about 1988 through 2002, or so.
+
+## Concluding thoughts
+
+* Coverage is remarkably complete after 1988. So it's not that the "state death" issue is happening all along. 
+
+* The possibility of reweighting for places where we have undercount is worth thinking about -- particularly how to test the assumption that the chance of being counted is independent of characteristics other than age and cohort (e.g., race, educ, state)
+
+* Next steps include linking to SSDM or to CENSOC to see who is left out.
+
+
+
+
