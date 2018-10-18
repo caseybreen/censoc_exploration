@@ -1,0 +1,142 @@
+---
+title: "Compare SSDM Files"
+output:
+  html_document: default
+Author: Casey Breen
+---
+
+### Library Packages
+
+```{r}
+library(data.table)
+library(tidyverse)
+```
+
+### Read SSDM Files and append together
+
+```{r, eval=FALSE}
+SSDM1 <- read_fwf("/data/josh//CenSoc/ssdm/ssdm1",
+                          fwf_widths(c(1,9, 20, 4, 15, 15, 1, 8, 8),
+                                     col_names = c("mode", "ssn", "lname",
+                                                   "name_suffix", "fname", "mname",
+                                                   "vorpcode", "dod", "dob")))
+SSDM2 <- read_fwf("/data/josh//CenSoc/ssdm/ssdm2",
+                          fwf_widths(c(1,9, 20, 4, 15, 15, 1, 8, 8),
+                                     col_names = c("mode", "ssn", "lname",
+                                                   "name_suffix", "fname", "mname",
+                                                   "vorpcode", "dod", "dob"))) 
+SSDM3 <- read_fwf("/data/josh//CenSoc/ssdm/ssdm2",
+                          fwf_widths(c(1,9, 20, 4, 15, 15, 1, 8, 8),
+                                     col_names = c("mode", "ssn", "lname",
+                                                   "name_suffix", "fname", "mname",
+                                                   "vorpcode", "dod", "dob"))) 
+
+SSDM_full <- rbind(SSDM1, SSDM2, SSDM3)
+rm(SSDM1, SSDM2, SSDM3)
+```
+
+### Read SSDM NBER Files and append together
+
+```{r, eval=FALSE}
+SSDM1_nber <- fread("/data/josh/CenSoc/ssdm/nber_versions/ssdm1_nber.csv")
+SSDM2_nber <- fread("/data/josh/CenSoc/ssdm/nber_versions/ssdm1_nber.csv")
+SSDM3_nber <- fread("/data/josh/CenSoc/ssdm/nber_versions/ssdm1_nber.csv")
+
+SSDM_full_nber <- rbind(SSDM1_nber, SSDM2_nber, SSDM3_nber)
+rm(SSDM1_nber, SSDM2_nber, SSDM3_nber)
+```
+
+### save out .rda files
+
+```{r, eval=FALSE}
+save(SSDM_full, file = "/90days/casey/ssdm_full.rda")
+save(SSDM_full_nber, file = "/90days/casey/ssdm_full_nber.rda")
+```
+
+# Load SSDM Datasets
+```{r, eval=FALSE}
+SSDM_full <- as.data.table(load("/90days/casey/ssdm_full.rda"))
+SSDM_full_nber <- as.data.table(load("/90days/casey/ssdm_full_nber.rda"))
+
+SSDM_full <- as.data.table(SSDM_full)
+SSDM_full[,"dyear" := as.numeric(substr(dod, 5, 9))]
+
+substrRight <- function(x, n){
+  substr(x, nchar(x)-n+1, nchar(x))
+}
+
+SSDM_full_nber[,"dyear" := as.numeric(substrRight(dod, 4))]
+```
+
+### Tabulate by deaths, combine death tabulations, calculate measures for graphing
+
+```{r, eval=FALSE}
+SSDM_table <- SSDM_full[, .N, by = list(dyear)]
+SSDM_table_nber <- SSDM_full_nber[, .N, by = list(dyear)]
+
+```
+
+```{r}
+load("/90days/casey/ssdm_full_nber_table.rda")
+load("/90days/casey/ssdm_full_table.rda")
+
+
+ssdm_table_combined <- SSDM_table_nber %>%
+  full_join(SSDM_table, by = "dyear") %>%
+  rename(nber_count = N.x, count = N.y) %>%
+  mutate(count_diff = nber_count - count) %>%
+  mutate(percent_diff = (nber_count/count)*100)
+  
+```
+
+### Compare Death Tabulations
+
+```{r}
+ggplot(ssdm_table_combined)+ 
+  geom_point(aes(x = dyear, y = nber_count, colour = "blue")) +
+  geom_point(aes(x = dyear, y = count, colour = "red"))         
+```
+```{r}
+ssdm_table_combined_2005 <- as.tibble(ssdm_table_combined %>%
+  filter(dyear > 2003 & dyear < 2011))
+
+```
+
+|dyear| nber_count|   count| count_diff| percent_diff|
+|-----:|----------:|-------:|----------:|------------:|
+|  2004|    2192040| 2213874|     -21834|     99.01377|
+|  2005|    2237958| 2183019|      54939|    102.51665|
+|  2006|    2224995| 2097920|     127075|    106.05719|
+|  2007|    2243583| 1855977|     387606|    120.88420|
+|  2008|    2285637| 1638857|     646780|    139.46531|
+|  2009|    2257212| 1525359|     731853|    147.97907|
+|  2010|     359622| 1424464|   -1064842|     25.24613|
+
+
+## Difference in total count of deaths (NBER_SSDM - SSDM) 
+
+```{r}
+ggplot(ssdm_table_combined)+ 
+  geom_point(aes(x = dyear, y = count_diff)) 
+```
+
+## Percent difference in deaths counted (NBER_SSDM/SSDM) 
+
+```{r}
+ggplot(ssdm_table_combined)+ 
+  geom_point(aes(x = dyear, y = percent_diff)) 
+```
+
+
+## Percent difference in deaths
+```{r}
+ssdm_table_filtered <- ssdm_table_combined %>%
+  filter(dyear > 1980 & dyear < 2010) 
+
+ggplot(ssdm_table_filtered)+ 
+  geom_point(aes(x = dyear, y = percent_diff))
+```
+
+
+
+

@@ -1,0 +1,134 @@
+---
+title: "Create Censoc Datasets"
+output: html_notebook
+---
+
+### Set up  
+
+- Create a new local project
+    - New project from version control
+    - Clone censoc from Github:  https://github.com/MJAlexander/censoc
+    - Add removed censoc functions to bottom of NAMESPACE (load_socsec_deaths, load_census, create_national_censoc)
+- Update path names
+    
+### Load Packages
+
+```{r}
+library(censoc)
+library(tidyverse)
+library(data.table)
+```
+
+### State Match
+
+```{r, eval = FALSE}
+# keep a log
+
+update_file <- "//home/ipums/casey-ipums/censoc/make_censoc/progress.txt"
+
+matched_data_folder <- "//home/ipums/casey-ipums/censoc/make_censoc/states/"
+
+# load in the socsec files
+
+socsec_files = c("/home/ipums/josh-ipums/progs/ssdm/ssdm1",
+                     "/home/ipums/josh-ipums/progs/ssdm/ssdm2",
+                     "/home/ipums/josh-ipums/progs/ssdm/ssdm3")
+
+socsec <- load_socsec_deaths(socsec_files)
+sink(update_file)
+cat("Socsec has been read in. \n")
+
+# get the list of state census files
+
+state_file_list <- list.files("/home/ipums/casey-ipums/IPUMS/1940/CSV/")
+state_fips <- as.numeric(gsub("\\D", "", state_file_list))
+state_fips <- state_fips[!is.na(state_fips)]
+state_file_list <- paste0("/home/ipums/casey-ipums/IPUMS/1940/CSV/", state_file_list[grepl("state", state_file_list)])
+
+
+
+cols_to_keep <- c("URBAN", "OWNERSHP", "RENT", "RACE", "MARST", "BPL", "HISPAN",
+                  "EMPSTAT", "OCCSCORE", "INCWAGE","INCNONWG",
+                  "EDUC",
+                  "MBPL", "FBPL", "OCC")
+
+# loop over each state file, do the match, and save the matched output
+
+for(i in 1:length(state_file_list)){
+  cat(paste("Reading in census file", i, "\n"))
+  census <- try(load_census(census_file = state_file_list[i], cols_to_keep = cols_to_keep))
+  if(class(census)=="try-error"){
+    cat(paste("File", i, "is empty \n"))
+  }
+  else{
+    cat(paste("Matching census file", i, "\n"))
+    censoc <- create_censoc(census, socsec)
+    cat(paste("Writing file", i, "\n"))
+    write_csv(censoc, paste0(matched_data_folder, state_fips[i], "_matched.csv"))
+  }
+}
+
+rm(socsec)
+
+sink()
+
+```
+
+- Several warnings messages (1 per state): the condition has length > 1 and only the first element will be used
+
+### National match
+```{r, eval = FALSE}
+# state censoc files
+files  <- paste0("~/censoc/make_censoc/states//",list.files(path = "~/censoc/make_censoc/states//", pattern = '\\.csv') )
+
+# national censoc
+all_censoc_unique <- create_national_censoc(files)
+
+# for BFDW2018
+cols_to_keep <- c("URBAN", "OWNERSHP", "RENT", "RACE", "MARST", "BPL", "HISPAN",
+                  "EMPSTAT", "OCCSCORE", "INCWAGE","INCNONWG",
+                  "EDUC",
+                  "MBPL", "FBPL", "OCC")
+bfdw <- all_censoc_unique[, c("SERIAL40", "NUMPREC40", "PERNUM", "STATEFIP",  "census_age.x", "byear", "dyear", "bmonth", "dmonth", cols_to_keep)]
+bfdw <- bfdw %>% rename(census_age = census_age.x)
+write_csv(bfdw, path  = "~/censoc/make_censoc/censoc_bfdw.csv")
+
+# save dataset with less variables
+dr <- all_censoc_unique[, c("SERIAL40", "NUMPREC40", "PERNUM", "STATEFIP",  "census_age.x", "byear", "dyear", "bmonth", "dmonth")]
+write_csv(dr, "~/censoc/make_censoc/national_matched_states_red.csv")
+
+```
+
+## Questions
+- national matched red states? 
+- dday missing and bday missing? Why are we giving bday missing and dday missing instead of actual dates? Confidentiality?
+
+```{r, eval = FALSE}
+colsToKeep <- c("SERIAL40", "NUMPREC40", "PERNUM", "STATEFIP",  "census_age", "byear", "dyear", "bmonth", "dmonth")
+
+censoc <- fread("/90days/casey/censoc_id_date_v1.csv", header=TRUE, select=colsToKeep)
+```
+
+Here can compare means to check how similar the datasets are (both contain 7654451 matches)
+
+```{r, include=TRUE}
+
+censoc <- as.data.table(censoc)
+d <- censoc[,lapply(.SD, mean)]
+
+censoc_casey <- as.data.table(dr)
+d2 <- censoc_casey[,lapply(.SD, mean)] %>% 
+  rename(census_age = census_age.x)
+
+means <- bind_rows(d, d2)
+means <- rbind(means, means[1, ] - means[2, ])
+
+```
+
+## Compare Means for both Datasets
+
+
+```{r}
+means
+```
+

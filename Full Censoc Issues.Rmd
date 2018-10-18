@@ -1,0 +1,108 @@
+---
+title: "Accessing Censoc with full IPUMS vars"
+output: html_notebook
+author: Casey Breen
+---
+
+
+## Introduction
+
+In this notebook, I explore the data quality of the CenSoc with full IPUMS variables. 
+
+We hope to: 
+
+(1) Explore and Identify and erroneous data in the full Censoc
+    
+(2) Decide whether these cases should be removed from the dataset
+
+    - Women being included in the dataset
+    - Strange names, characters, etc. 
+
+
+## Read in full CenSoc Data
+```{r}
+library(data.table)
+```
+
+
+```{r}
+dt <- fread("~josh-ipums/censoc/full_censoc_censoc.csv")
+head(dt)
+```
+We get 7469522 rows. 
+
+
+Let's check that there are no women in the dataset: 
+
+```{r}
+dt[SEX != 1, .(NAMEFRST, SEX, RELSTR)]
+```
+
+
+RELSTR contains the alphabetic string describing an individual's relationship to the head of household or householder (from IPUMS). Daughter, Maid and Wife might be as issues Let's check these out: 
+
+```{r}
+dt[RELSTR %in%  c("'Daughter'", "'Maid'", "'Wife'") & SEX ==1, .(NAMEFRST, SEX, RELSTR)]
+```
+
+Are there any non-alpha characters (besides spaces)? Nope! 
+
+```{r}
+dt[!grepl("[A-z]", NAMEFRST), .(NAMEFRST)]
+```
+
+Are there any short names? I'm checking for the actual first or last name containing fewer than 3 characters. Note that `` take up two characters. Looks like there's around ~5,000.  
+
+```{r}
+dt[(nchar(NAMEFRST) < 5) | (nchar(NAMELAST) < 5), .(NAMEFRST, NAMELAST)]
+```
+
+```{r}
+dt_short_names <- dt[(nchar(NAMEFRST) < 5) | (nchar(NAMELAST) < 5), .(NAMEFRST, NAMELAST)]
+
+table <- dt_short_names[, .N ,by = NAMEFRST]
+
+table[order(-N),]
+```
+
+
+
+How about where the first and the last names are short? Nope! 
+
+```{r}
+dt[(nchar(NAMEFRST) < 5) & (nchar(NAMELAST) < 5), .(NAMEFRST, NAMELAST)]
+```
+
+Let's take the top names women's names (that were also not top men's names) from the SSA: https://www.ssa.gov/oact/babynames/decades/names1900s.html for 1900, 1910, 1920, 1930, 1940.
+
+```{r}
+popular_names <- read_tsv("/home/ipums/casey-ipums/censoc/casey/top_names_1900_1940", col_names = c("rank", "men", "freq_men", "women", "freq_women")) %>%
+  select(men, women)
+
+womens_names <- paste0("'", unique(popular_names$women[!popular_names$women %in% popular_names$men]), "'")
+
+head(womens_names)
+```
+
+How many men have popular womens names? 40,464. 
+
+```{r}
+dt[NAMEFRST %in% womens_names,.(NAMEFRST, SEX, RELSTR)]
+```
+
+How many men have both a women's name and a female relationship string? Maybe these cases we should drop! 
+
+
+```{r}
+dt[NAMEFRST %in% womens_names & SEX == 1 &RELSTR %in% c("'Wife'", "'Daughter'", "'Maid'"),.(NAMEFRST, SEX, RELSTR)]
+```
+
+
+
+
+
+
+
+
+
+
