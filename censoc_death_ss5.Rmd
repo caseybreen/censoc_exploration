@@ -1,0 +1,177 @@
+---
+title: "R Notebook"
+output:
+  html_notebook: default
+  html_document: default
+---
+
+```{r}
+#install.packages("devtools")
+library(censoc)
+library(tidyverse)
+library(data.table)
+```        
+
+```{r File paths }
+censoc_path = "/home/ipums/felipe-ipums/censoc/make_censoc/censoc_bfdw_ssn.csv"
+death_path = "/nobackup/90days/fmenares/censoc/numdeath_appended.csv"
+```
+
+```{r}
+censoc_ssn <- fread(censoc_path, header=TRUE)
+death = fread(death_path, colClasses = list(character= 'ssn'))
+censoc_ssn <- as.data.table(censoc_ssn)
+death <- as.data.table(death)
+
+censoc_ssn[, RACE := floor(RACE/100)]
+censoc_ssn[, age.at.death := dyear - byear]
+
+
+censoc_ssn = censoc_ssn %>% mutate(ssn=ifelse(nchar(ssn)==8,paste0(0, ssn), ifelse(nchar(ssn)==7,paste0("00", ssn),ssn))) %>% mutate(ssn=as.character(ssn))
+
+censoc_ssn = censoc_ssn %>% mutate(BPL=floor(BPL/100), Foreign = 1* (BPL > 100), place = case_when(
+  Foreign == 1 ~ "Foreign",
+  Foreign == 0 ~ "U.S"
+  ))
+
+censoc_ssn <- censoc_ssn %>% mutate(race_name = case_when(
+  RACE == 1 ~ "White",
+  RACE == 2 ~ "Black",
+  RACE == 3 ~ "American Indian/Alaskan native",
+  RACE == 4 ~ "Chinese",
+  RACE == 5 ~ "Japanese",
+  RACE == 6 ~ "Other Asian or Pacific Islander",
+  TRUE ~ "NA"
+))
+merged_1 = as.data.table(anti_join(censoc_ssn, death, by ="ssn"))
+merged_3 = as.data.table(inner_join(censoc_ssn, death, by ="ssn"))
+rm(censoc_ssn,death)
+```
+Computing by cohort, age of death and race/birthplace
+
+```{r}
+p_r = c("race_name", "place")
+for (i in 1:length(p_r)) {
+dt1_1 = merged_1[,.(.N), by = .(get(p_r[[i]]),  age.at.death, byear)]
+dt1_2 = merged_1[,.(.N), by = .(age.at.death, byear)]
+dt1_3 = merged_1[,.(.N), by = .(age.at.death, get(p_r[[i]]))]
+dt1_4 = merged_1[,.(.N), by = .(age.at.death)]
+
+dt3_1 = merged_3[,.(.N), by = .(get(p_r[[i]]),  age.at.death, byear)]
+dt3_2 = merged_3[,.(.N), by = .(age.at.death, byear)]
+dt3_3 = merged_3[,.(.N), by = .(age.at.death, get(p_r[[i]]))]
+dt3_4 = merged_3[,.(.N), by = .(age.at.death)]
+
+#unmatched
+dt11 = inner_join(dt1_1,dt1_2, by=c("age.at.death"="age.at.death","byear"="byear"))
+dt12 = inner_join(dt1_3,dt1_4, by=c("age.at.death"="age.at.death"))
+dt1 = inner_join(dt11,dt12,by=c("age.at.death"="age.at.death","get"="get"))
+
+#matched
+dt31 = inner_join(dt3_1,dt3_2, by=c("age.at.death"="age.at.death","byear"="byear"))
+dt32 = inner_join(dt3_3,dt3_4, by=c("age.at.death"="age.at.death"))
+dt3 = inner_join(dt31,dt32,by=c("age.at.death"="age.at.death","get"="get"))
+
+dt1=as.data.table(dt1)
+dt3=as.data.table(dt3)
+
+dt1 = dt1[, prop_c_r_p:= N.x.x/N.y.x] 
+dt1 = dt1[, prop_r_p:= N.x.y/N.y.y] 
+dt3 = dt3[, prop_c_r_p:= N.x.x/N.y.x] 
+dt3 = dt3[, prop_r_p:= N.x.y/N.y.y]
+
+if (p_r[i] == "race_name") {
+#plot_table_place
+dt_age_race = inner_join(dt1, dt3,by=c("get"="get","age.at.death"="age.at.death","byear"="byear"))
+dt_age_race = dt_age_race %>% rename("race_name" = get)
+dt_age_race = as.data.table(dt_age_race)
+#dt_age_race = dt_age_race[, list(race_name,byear,age.at.death, prop_c_r_p.x, prop_c_r_p.y, prop_r_p.x, prop_r_p.y)] 
+}
+
+else {
+dt_age_place = inner_join(dt1, dt3,by=c("get"="get","age.at.death"="age.at.death","byear"="byear"))
+dt_age_place = dt_age_place %>% rename("place" = get)
+dt_age_place = as.data.table(dt_age_place)
+#dt_age_place = dt_age_place[race_name,byear,age.at.death, prop_c_r_p.x, prop_c_r_p.y, prop_r_p.x, prop_r_p.y] 
+}
+}
+rm(dt1,dt1_1,dt1_2,dt1_3,dt1_4,dt11,dt12,dt3,dt3_1,dt3_2,dt3_3,dt3_4,dt31,dt32)
+rm(merged_1,merged_3)
+```
+
+
+
+```{r}
+dt1= merged_1[,.(.N), by = .(byear)]
+dt3 = merged_3[,.(.N), by = .(byear)]
+dt13=inner_join(dt1,dt3,by=c("byear"="byear"))
+  dt13 %>%
+  ggplot() +
+  geom_point(aes(x=byear, y=N.y, colour = "Matched: 4.5M")) +
+    geom_point(aes(x=byear, y=N.x, colour = "Unatched: 3M")) +
+  labs(title="Censoc", x="Year of birth", y = "Count")
+  
+  rm(dt1,dt3,dt13)
+```
+
+
+
+
+```{r Place of birth graphics}
+  dt_age_place %>% filter(place=="Foreign") %>%
+  ggplot() +
+  geom_point(aes(x = age.at.death, y = prop_r_p.y, colour = "Matched" )) +
+  geom_point(aes(x = age.at.death , y = prop_r_p.x, colour ="Unmatched"))+
+  labs(title="Place of Birth: Outside U.S", x="Age at death", y = "Proportion")
+  
+  dt_age_place %>% filter(place=="U.S") %>%
+  ggplot() +
+geom_point(aes(x = age.at.death, y = prop_r_p.y, colour = "Matched" )) +
+  geom_point(aes(x = age.at.death , y = prop_r_p.x, colour ="Unmatched")) +
+  labs(title="Place of Birth: U.S", x="Age at death", y = "Proportion")
+  
+  dt_age_place %>% filter(place=="Foreign", byear==1900 | byear==1905 | byear==1910 | byear==1915 | byear==1920) %>%
+  ggplot() +
+  geom_point(aes(x = age.at.death, y = prop_c_r_p.y, colour = "Matched" )) +
+  geom_point(aes(x = age.at.death , y = prop_c_r_p.x, colour ="Unmatched")) +
+  facet_wrap(~byear) +
+  labs(title="Place of Birth: Outside U.S, by cohort", x="Age at death", y = "Proportion")
+  
+  dt_age_place %>% filter(place=="U.S", byear==1900 | byear==1905 | byear==1910 | byear==1915 | byear==1920) %>%
+  ggplot() +
+geom_point(aes(x = age.at.death, y = prop_c_r_p.y, colour = "Matched" )) +
+  geom_point(aes(x = age.at.death , y = prop_c_r_p.x, colour ="Unmatched")) +
+  facet_wrap(~byear) +
+  labs(title="Place of Birth: U.S, by cohort", x="Age at death", y = "Proportion")
+```
+Race graphics
+```{r Race graphics}
+
+dt_age_race %>% filter(race_name =="Black") %>%
+  ggplot() +
+  geom_point(aes(x = age.at.death, y = prop_r_p.y, colour = "Matched" )) +
+  geom_point(aes(x = age.at.death , y = prop_r_p.x, colour ="Unmatched")) +
+  labs(title="Race: Black", x="Age at death", y = "Proportion")
+  
+  dt_age_race %>% filter(race_name == "White") %>%
+  ggplot() +
+geom_point(aes(x = age.at.death, y = prop_r_p.y, colour = "Matched" )) +
+  geom_point(aes(x = age.at.death , y = prop_r_p.x, colour ="Unmatched")) +
+  labs(title="Race: White, by cohort", x="Age at death", y = "Proportion")
+
+  dt_age_race%>% filter(race_name=="Black", byear==1900 | byear==1905 | byear==1910 | byear==1915 | byear==1920) %>%
+  ggplot() +
+  geom_point(aes(x = age.at.death, y = prop_c_r_p.y, colour = "Matched" )) +
+  geom_point(aes(x = age.at.death , y = prop_c_r_p.x, colour ="Unmatched")) +
+  facet_wrap(~byear) +
+  labs(title="Race: Black, by cohort", x="Age at death", y = "Proportion")
+  
+  dt_age_race %>% filter(race_name=="White", byear==1900 | byear==1905 | byear==1910 | byear==1915 | byear==1920) %>%
+  ggplot() +
+geom_point(aes(x = age.at.death, y = prop_c_r_p.y, colour = "Matched" )) +
+  geom_point(aes(x = age.at.death , y = prop_c_r_p.x, colour ="Unmatched")) +
+  facet_wrap(~byear) +
+  labs(title="Race: White, by cohort", x="Age at death", y = "Proportion")
+
+```
+
