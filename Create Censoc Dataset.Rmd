@@ -1,6 +1,7 @@
 ---
 title: "Create Censoc Datasets"
 output: html_notebook
+output: github_document
 ---
 
 ### Set up  
